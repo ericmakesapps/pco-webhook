@@ -1,0 +1,19 @@
+{
+	"name": "pco-webhook",
+	"version": "0.0.0",
+	"description": "",
+	"main": "build/index.js",
+	"type": "module",
+	"scripts": {
+		"build": "tsc"
+	},
+	"author": "Eric Ferreira",
+	"license": "MIT",
+	"dependencies": {
+		"@types/express": "^4.17.13",
+		"@types/node": "^18.0.6",
+		"express": "^4.18.1",
+		"got": "^12.1.0",
+		"typescript": "^4.7.4"
+	}
+}
