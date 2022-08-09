@@ -1,11 +1,6 @@
 import got from "got"
 import express from "express"
 
-/*
- * Auth should be an object exported with property username and password. These will be your personal auth token from the PCO API.
- */
-import { auth } from "./auth.js"
-
 import { Datum, ParsedRequest } from "./types/Requests.js"
 import { ServiceTypes } from "./types/ServiceTypes.js"
 import { Plans, Plan } from "./types/Plans.js"
@@ -16,8 +11,13 @@ const api = "https://api.planningcenteronline.com/services/v2"
 
 const plans: Record<string, Plan> = {}
 
+type Auth = {
+	username: string
+	password: string
+}
+
 // Populate the plans object
-async function populatePlans() {
+async function populatePlans(auth: Auth) {
 	const previous = Object.keys(plans)
 
 	const serviceTypes = await got.get(`${api}/service_types`, auth).json<ServiceTypes>()
@@ -51,9 +51,7 @@ async function populatePlans() {
 	}
 }
 
-populatePlans()
-
-async function getPlanIfExists(id: string) {
+async function getPlanIfExists(id: string, auth: Auth) {
 	const plan = plans[id]
 
 	if (plan) {
@@ -68,7 +66,7 @@ async function getPlanIfExists(id: string) {
 	}
 
 	if (!plan) {
-		await populatePlans()
+		await populatePlans(auth)
 
 		return plans[id]
 	}
@@ -96,66 +94,76 @@ app.post(
 		try {
 			const iftttEvent = req.query["ifttt-event"]
 			const iftttKey = req.query["ifttt-key"]
+			const username = req.query["pco-token-username"]
+			const password = req.query["pco-token-password"]
 
-			if (!iftttEvent || !iftttKey) {
+			if (!iftttEvent || !iftttKey || !username || !password) {
 				res.status(400)
 
-				if (!iftttEvent && !iftttKey) {
-					res.send(
-						"The IFTTT event and key are required. Pass them in the query string under `ifttt-event` and `ifttt-key`."
-					)
-				} else if (!iftttEvent) {
-					res.send(
-						"The IFTTT event is required. Pass it in the query string under `ifttt-event`."
-					)
-				} else {
-					res.send(
-						"The IFTTT key is required. Pass it in the query string under `ifttt-key`."
-					)
+				let message = ["Missing parameter(s)."]
+
+				if (!iftttEvent) {
+					message.push("Pass the IFTTT event as `ifttt-event`.")
 				}
+
+				if (!iftttKey) {
+					message.push("Pass the IFTTT key as `ifttt-key`.")
+				}
+
+				if (!username) {
+					message.push("Pass the PCO token username as `pco-token-username`.")
+				}
+
+				if (!password) {
+					message.push("Pass the PCO token password as `pco-token-password`.")
+				}
+
+				res.send(message.join(" "))
+
+				return
+			}
+
+			const payload = req.body[0].payload
+
+			const id = [
+				payload.meta.parent,
+				payload.data,
+				payload.data.relationships.plan.data
+			].find((entity) => entity?.type === "Plan")?.id
+
+			/**
+			 * Define the parameters of the notification.
+			 *
+			 * **`<value1>`**  \
+			 * `<value2>`  \
+			 * *Tapping opens `value3` as a URL*
+			 */
+			const json: {
+				/** The notification title */
+				value1?: string
+				/** The notification content */
+				value2?: string
+				/** The URL to open on tap */
+				value3?: string
+			} = {
+				value1: "Planning Center Updated"
+			}
+
+			const plan = id && (await getPlanIfExists(id, { username, password }))
+
+			if (plan) {
+				json.value2 = `${plan.attributes.series_title} ${plan.attributes.title} was updated. Check it out!`
+				json.value3 = plan.attributes.planning_center_url
+
+				const post = await got.post(
+					`https://maker.ifttt.com/trigger/${iftttEvent}/with/key/${iftttKey}`,
+					{ json }
+				)
+
+				res.status(post.statusCode)
+				res.send(`Success: ${post.body}`)
 			} else {
-				const payload = req.body[0].payload
-
-				const id = [
-					payload.meta.parent,
-					payload.data,
-					payload.data.relationships.plan.data
-				].find((entity) => entity?.type === "Plan")?.id
-
-				/**
-				 * Define the parameters of the notification.
-				 *
-				 * **`<value1>`**  \
-				 * `<value2>`  \
-				 * *Tapping opens `value3` as a URL*
-				 */
-				const json: {
-					/** The notification title */
-					value1?: string
-					/** The notification content */
-					value2?: string
-					/** The URL to open on tap */
-					value3?: string
-				} = {
-					value1: "Planning Center Updated"
-				}
-
-				const plan = id && (await getPlanIfExists(id))
-
-				if (plan) {
-					json.value2 = `${plan.attributes.series_title} ${plan.attributes.title} was updated. Check it out!`
-					json.value3 = plan.attributes.planning_center_url
-
-					const post = await got.post(
-						`https://maker.ifttt.com/trigger/${iftttEvent}/with/key/${iftttKey}`,
-						{ json }
-					)
-
-					res.status(post.statusCode)
-					res.send(`Success: ${post.body}`)
-				} else {
-					res.send(`Successfully processed request.`)
-				}
+				res.send(`Successfully processed request.`)
 			}
 		} catch (err: any) {
 			res.status(500)

@@ -27,6 +27,12 @@ export interface RawAttributes {
 }
 
 export interface ParsedRequest extends Request {
+	query: {
+		"ifttt-event"?: string
+		"ifttt-key"?: string
+		"pco-token-username"?: string
+		"pco-token-password"?: string
+	}
 	body: NonEmptyArray<Attributes>
 }
 
