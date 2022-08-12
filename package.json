@@ -12,6 +12,7 @@
 	"author": "Eric Ferreira",
 	"license": "MIT",
 	"dependencies": {
+		"@ericbf/helpers": "^0.0.8",
 		"express": "^4.18.1",
 		"got": "^12.1.0"
 	},

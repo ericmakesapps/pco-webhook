@@ -1,6 +1,8 @@
 import got from "got"
 import express from "express"
 
+import { debounce } from "@ericbf/helpers/debounce.js"
+
 import { Datum, ParsedRequest } from "./types/Requests.js"
 import { ServiceTypes } from "./types/ServiceTypes.js"
 import { Plans, Plan } from "./types/Plans.js"
@@ -51,26 +53,59 @@ async function populatePlans(auth: Auth) {
 	}
 }
 
-async function getPlanIfExists(id: string, auth: Auth) {
-	const plan = plans[id]
+const getPlanIfExists = debounce(
+	async (id: string, auth: Auth) => {
+		const plan = plans[id]
 
-	if (plan) {
-		return got
-			.get(
-				`${api}/service_types/${plan.relationships.service_type.data?.id}/plans/${id}`,
-				auth
-			)
-			.json<Plan>()
-			.then(() => plan)
-			.catch(() => undefined)
-	}
+		if (plan) {
+			console.log("Plan was in the map", plan)
 
-	if (!plan) {
-		await populatePlans(auth)
+			return got
+				.get(
+					`${api}/service_types/${plan.relationships.service_type.data?.id}/plans/${id}`,
+					auth
+				)
+				.json<Plan>()
+				.then(() => plan)
+				.catch(() => undefined)
+		}
 
-		return plans[id]
-	}
+		if (!plan) {
+			await populatePlans(auth)
+
+			console.log("Plan fetched by populate", plans[id])
+
+			return plans[id]
+		}
+	},
+	5000,
+	true
+)
+
+/**
+ * Define the contents of the notification.
+ *
+ * **`<value1>`**  \
+ * `<value2>`  \
+ * *Tapping opens `value3` as a URL*
+ */
+type NotificationPayload = {
+	/** The notification title */
+	value1?: string
+	/** The notification content */
+	value2?: string
+	/** The URL to open on tap */
+	value3?: string
 }
+
+const sendNotification = debounce(
+	async (json: NotificationPayload, iftttEvent: string, iftttKey: string) =>
+		got.post(`https://maker.ifttt.com/trigger/${iftttEvent}/with/key/${iftttKey}`, {
+			json
+		}),
+	5000,
+	true
+)
 
 app.use(express.json())
 
@@ -131,34 +166,19 @@ app.post(
 				payload.data.relationships.plan.data
 			].find((entity) => entity?.type === "Plan")?.id
 
-			/**
-			 * Define the parameters of the notification.
-			 *
-			 * **`<value1>`**  \
-			 * `<value2>`  \
-			 * *Tapping opens `value3` as a URL*
-			 */
-			const json: {
-				/** The notification title */
-				value1?: string
-				/** The notification content */
-				value2?: string
-				/** The URL to open on tap */
-				value3?: string
-			} = {
+			const json: NotificationPayload = {
 				value1: "Planning Center Updated"
 			}
 
 			const plan = id && (await getPlanIfExists(id, { username, password }))
 
+			console.log(plan)
+
 			if (plan) {
 				json.value2 = `${plan.attributes.series_title} ${plan.attributes.title} was updated. Check it out!`
 				json.value3 = plan.attributes.planning_center_url
 
-				const post = await got.post(
-					`https://maker.ifttt.com/trigger/${iftttEvent}/with/key/${iftttKey}`,
-					{ json }
-				)
+				const post = await sendNotification(json, iftttEvent, iftttKey)
 
 				res.status(post.statusCode)
 				res.send(`Success: ${post.body}`)
