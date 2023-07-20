@@ -1,86 +1,54 @@
-import got from "got"
 import express from "express"
 
-import { debounce } from "@ericbf/helpers/debounce.js"
-
-import { Datum, ParsedRequest } from "./types/Requests.js"
-import { ServiceTypes } from "./types/ServiceTypes.js"
-import { Plans, Plan } from "./types/Plans.js"
+import daysBetween from "@ericbf/helpers/daysBetween"
+import debounce from "@ericbf/helpers/debounce"
+import { Datum, ParsedRequest } from "./types/Requests"
+import { Plan } from "./types/Plan"
+import { Schedule } from "./types/Schedule"
 
 const app = express()
-
 const api = "https://api.planningcenteronline.com/services/v2"
 
-const plans: Record<string, Plan> = {}
+const plans: Record<string, [Date, Promise<Plan | undefined>]> = {}
 
-type Auth = {
-	username: string
+const getPlan = async (
+	planId: string,
+	personId: string,
+	username: string,
 	password: string
-}
+) => {
+	let data = plans[planId]
 
-// Populate the plans object
-async function populatePlans(auth: Auth) {
-	const previous = Object.keys(plans)
-
-	const serviceTypes = await got.get(`${api}/service_types`, auth).json<ServiceTypes>()
-
-	let promises: Promise<any>[] = []
-
-	for (const serviceType of serviceTypes.data) {
-		promises.push(
-			got
-				.get(`${api}/service_types/${serviceType.id}/plans`, auth)
-				.json<Plans>()
-				.then((planDatas) => {
-					for (const plan of planDatas.data) {
-						plans[plan.id] = plan
-
-						const index = previous.indexOf(plan.id)
-
-						if (index >= 0) {
-							previous.splice(index, 1)
-						}
+	if (!data || daysBetween(data[0], new Date()) >= 1) {
+		data = plans[planId] = [
+			new Date(),
+			Promise.all([
+				fetch(`${api}/plans/${planId}`, {
+					headers: {
+						Authorization:
+							"Basic " +
+							Buffer.from(username + ":" + password).toString("base64")
 					}
 				})
-		)
+					.then((r): Promise<Plan> => r.json())
+					.catch(() => undefined),
+				fetch(`${api}/people/${personId}/schedules?where[plan_id]=${planId}`)
+					.then((r): Promise<Schedule | undefined> => r.json())
+					.catch(() => undefined)
+			]).then(([plan, schedule]) => {
+				if (!plan || !schedule?.data.length) {
+					delete plans[planId]
+
+					return undefined
+				}
+
+				return plan
+			})
+		]
 	}
 
-	await Promise.all(promises)
-
-	// Remove any plans that no longer exist
-	for (const id of previous) {
-		delete plans[id]
-	}
+	return data[1]
 }
-
-const getPlanIfExists = debounce(
-	async (id: string, auth: Auth) => {
-		const plan = plans[id]
-
-		if (plan) {
-			console.log("Plan was in the map", plan)
-
-			return got
-				.get(
-					`${api}/service_types/${plan.relationships.service_type.data?.id}/plans/${id}`,
-					auth
-				)
-				.json<Plan>()
-				.then(() => plan)
-				.catch(() => undefined)
-		}
-
-		if (!plan) {
-			await populatePlans(auth)
-
-			console.log("Plan fetched by populate", plans[id])
-
-			return plans[id]
-		}
-	},
-	5000,
-	true
-)
 
 /**
  * Define the contents of the notification.
@@ -99,11 +67,20 @@ type NotificationPayload = {
 }
 
 const sendNotification = debounce(
-	async (json: NotificationPayload, iftttEvent: string, iftttKey: string) =>
-		got.post(`https://maker.ifttt.com/trigger/${iftttEvent}/with/key/${iftttKey}`, {
-			json
-		}),
-	5000,
+	async (json: NotificationPayload, iftttEvent: string, iftttKey: string) => {
+		return fetch(
+			`https://maker.ifttt.com/trigger/${iftttEvent}/with/key/${iftttKey}`,
+			{
+				method: "post",
+				headers: {
+					Accept: "application/json",
+					"Content-Type": "application/json"
+				},
+				body: JSON.stringify(json)
+			}
+		)
+	},
+	1000 * 60,
 	true
 )
 
@@ -119,7 +96,7 @@ app.post(
 		req.body = req.body.data.map((data: Datum) => {
 			return {
 				...data.attributes,
-				payload: JSON.parse(data.attributes.payload)
+				payload: JSON.parse(data.attributes.payload!)
 			}
 		})
 
@@ -131,8 +108,9 @@ app.post(
 			const iftttKey = req.query["ifttt-key"]
 			const username = req.query["pco-token-username"]
 			const password = req.query["pco-token-password"]
+			const personId = req.query["pco-person-id"]
 
-			if (!iftttEvent || !iftttKey || !username || !password) {
+			if (!iftttEvent || !iftttKey || !username || !password || !personId) {
 				res.status(400)
 
 				let message = ["Missing parameter(s)."]
@@ -153,35 +131,33 @@ app.post(
 					message.push("Pass the PCO token password as `pco-token-password`.")
 				}
 
+				if (!personId) {
+					message.push("Pass the PCO person ID as `pco-person-id`.")
+				}
+
 				res.send(message.join(" "))
 
 				return
 			}
 
-			const payload = req.body[0].payload
-
-			const id = [
-				payload.meta.parent,
-				payload.data,
-				payload.data.relationships.plan.data
-			].find((entity) => entity?.type === "Plan")?.id
-
 			const json: NotificationPayload = {
 				value1: "Planning Center Updated"
 			}
 
-			const plan = id && (await getPlanIfExists(id, { username, password }))
+			const planId = req.body[0].payload.data.relationships.plan.data.id
 
-			console.log(plan)
+			const plan = await getPlan(planId, personId, username, password)
+
+			console.log("Plan:", plan)
 
 			if (plan) {
-				json.value2 = `${plan.attributes.series_title} ${plan.attributes.title} was updated. Check it out!`
-				json.value3 = plan.attributes.planning_center_url
+				json.value2 = `${plan.data.attributes.series_title} ${plan.data.attributes.title} was updated. Check it out!`
+				json.value3 = plan.data.attributes.planning_center_url
 
 				const post = await sendNotification(json, iftttEvent, iftttKey)
 
-				res.status(post.statusCode)
-				res.send(`Success: ${post.body}`)
+				res.status(post.status)
+				res.send(`Success:\n\n${JSON.stringify(json, undefined, 2)}`)
 			} else {
 				res.send(`Successfully processed request.`)
 			}

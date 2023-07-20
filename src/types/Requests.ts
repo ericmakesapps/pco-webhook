@@ -32,6 +32,7 @@ export interface ParsedRequest extends Request {
 		"ifttt-key"?: string
 		"pco-token-username"?: string
 		"pco-token-password"?: string
+		"pco-person-id"?: string
 	}
 	body: NonEmptyArray<Attributes>
 }
