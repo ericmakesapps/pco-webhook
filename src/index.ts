@@ -31,10 +31,24 @@ const getPlan = async (
 					}
 				})
 					.then((r): Promise<Plan> => r.json())
-					.catch(() => undefined),
-				fetch(`${api}/people/${personId}/schedules?where[plan_id]=${planId}`)
+					.catch((e) => {
+						console.error(e)
+
+						return undefined
+					}),
+				fetch(`${api}/people/${personId}/schedules?where[plan_id]=${planId}`, {
+					headers: {
+						Authorization:
+							"Basic " +
+							Buffer.from(username + ":" + password).toString("base64")
+					}
+				})
 					.then((r): Promise<Schedule | undefined> => r.json())
-					.catch(() => undefined)
+					.catch((e) => {
+						console.error(e)
+
+						return undefined
+					})
 			]).then(([plan, schedule]) => {
 				if (!plan || !schedule?.data.length) {
 					delete plans[planId]
