@@ -94,8 +94,10 @@ const sendNotification = debounce(
 			}
 		)
 	},
-	1000 * 60,
-	true
+	// Let's wait for four minutes
+	1000 * 60 * 4,
+	// Wait for changes to settle before sending the notification
+	false
 )
 
 app.use(express.json())
@@ -168,10 +170,16 @@ app.post(
 				json.value2 = `${plan.data.attributes.series_title} ${plan.data.attributes.title} was updated. Check it out!`
 				json.value3 = plan.data.attributes.planning_center_url
 
-				const post = await sendNotification(json, iftttEvent, iftttKey)
+				await sendNotification(json, iftttEvent, iftttKey)
 
-				res.status(post.status)
-				res.send(`Success:\n\n${JSON.stringify(json, undefined, 2)}`)
+				res.status(200)
+				res.send(
+					`Successfully queued notification:\n\n${JSON.stringify(
+						json,
+						undefined,
+						2
+					)}`
+				)
 			} else {
 				res.send(`Successfully processed request.`)
 			}
