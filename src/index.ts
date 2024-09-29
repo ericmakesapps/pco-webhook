@@ -1,7 +1,7 @@
 import express from "express"
 
-import daysBetween from "@ericbf/helpers/daysBetween"
-import debounce from "@ericbf/helpers/debounce"
+import daysBetween from "fast-ts-helpers/daysBetween"
+import debounce from "fast-ts-helpers/debounce"
 import { Datum, ParsedRequest } from "./types/Requests"
 import { Plan } from "./types/Plan"
 import { Schedule } from "./types/Schedule"
@@ -72,27 +72,32 @@ const getPlan = async (
  * *Tapping opens `value3` as a URL*
  */
 type NotificationPayload = {
-	/** The notification title */
-	value1?: string
-	/** The notification content */
-	value2?: string
-	/** The URL to open on tap */
-	value3?: string
+	/** The ID of the trigger in PushMe. */
+	triggerId: string
+	/** The notification title. */
+	title?: string
+	/** The notification text content. */
+	text?: string
+	/** The notification URL. */
+	url?: string
 }
 
 const sendNotification = debounce(
-	async (json: NotificationPayload, iftttEvent: string, iftttKey: string) => {
-		return fetch(
-			`https://maker.ifttt.com/trigger/${iftttEvent}/with/key/${iftttKey}`,
-			{
-				method: "post",
-				headers: {
-					Accept: "application/json",
-					"Content-Type": "application/json"
-				},
-				body: JSON.stringify(json)
-			}
-		)
+	async (json: NotificationPayload) => {
+		if (!json.text) {
+			console.log("No text provided for notification. Nothing to do.")
+
+			return
+		}
+
+		return fetch("https://pushme.win/trigger", {
+			method: "post",
+			headers: {
+				Accept: "application/json",
+				"Content-Type": "application/json"
+			},
+			body: JSON.stringify(json)
+		})
 	},
 	// Let's wait for four minutes
 	1000 * 60 * 4,
@@ -120,23 +125,18 @@ app.post(
 	},
 	async (req: ParsedRequest, res) => {
 		try {
-			const iftttEvent = req.query["ifttt-event"]
-			const iftttKey = req.query["ifttt-key"]
+			const triggerId = req.query["trigger-id"]
 			const username = req.query["pco-token-username"]
 			const password = req.query["pco-token-password"]
 			const personId = req.query["pco-person-id"]
 
-			if (!iftttEvent || !iftttKey || !username || !password || !personId) {
+			if (!triggerId || !username || !password || !personId) {
 				res.status(400)
 
 				let message = ["Missing parameter(s)."]
 
-				if (!iftttEvent) {
-					message.push("Pass the IFTTT event as `ifttt-event`.")
-				}
-
-				if (!iftttKey) {
-					message.push("Pass the IFTTT key as `ifttt-key`.")
+				if (!triggerId) {
+					message.push("Pass the PushMe trigger ID as `trigger-id`.")
 				}
 
 				if (!username) {
@@ -157,20 +157,24 @@ app.post(
 			}
 
 			const json: NotificationPayload = {
-				value1: "Planning Center Updated"
+				triggerId,
+				title: "Planning Center Update"
 			}
 
-			const planId = req.body[0].payload.data.relationships.plan.data.id
-
-			const plan = await getPlan(planId, personId, username, password)
+			const plan = await getPlan(
+				req.body[0].payload.meta.parent.id,
+				personId,
+				username,
+				password
+			)
 
 			console.log("Plan:", plan)
 
 			if (plan) {
-				json.value2 = `${plan.data.attributes.series_title} ${plan.data.attributes.title} was updated. Check it out!`
-				json.value3 = plan.data.attributes.planning_center_url
+				json.text = `${plan.data.attributes.series_title} ${plan.data.attributes.title} was updated. Check it out!`
+				json.url = plan.data.attributes.planning_center_url
 
-				await sendNotification(json, iftttEvent, iftttKey)
+				await sendNotification(json)
 
 				res.status(200)
 				res.send(

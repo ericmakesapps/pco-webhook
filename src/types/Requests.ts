@@ -28,8 +28,7 @@ export interface RawAttributes {
 
 export interface ParsedRequest extends Request {
 	query: {
-		"ifttt-event"?: string
-		"ifttt-key"?: string
+		"trigger-id"?: string
 		"pco-token-username"?: string
 		"pco-token-password"?: string
 		"pco-person-id"?: string
@@ -37,10 +36,13 @@ export interface ParsedRequest extends Request {
 	body: NonEmptyArray<Attributes>
 }
 
-type Attributes = PlanItemDestroyed
+type Attributes = PlanItemAction | PlanNoteAction
 
-interface PlanItemDestroyed {
-	name: "services.v2.events.plan_item.destroyed"
+interface PlanItemAction {
+	name:
+		| "services.v2.events.plan_item.created"
+		| "services.v2.events.plan_item.updated"
+		| "services.v2.events.plan_item.destroyed"
 	attempt: number
 	payload: {
 		data: {
@@ -60,6 +62,41 @@ interface PlanItemDestroyed {
 		}
 		meta: {
 			parent: Entity<"Plan">
+		}
+	}
+}
+
+interface PlanNoteAction {
+	name:
+		| "services.v2.events.plan_note.created"
+		| "services.v2.events.plan_note.updated"
+		| "services.v2.events.plan_note.destroyed"
+	attempt: number
+	payload: {
+		data: {
+			type: string
+			id: string
+			attributes: {
+				category_name: string
+				content: null
+				created_at: Date
+				updated_at: Date
+			}
+			relationships: {
+				created_by: Relationship<Entity<"Person">>
+				plan_note_category: Relationship<Entity<"PlanNoteCategory">>
+				teams: Relationship<null>
+			}
+			links: {
+				plan_note_category: string
+				self: string
+			}
+		}
+		included: any[]
+		meta: {
+			can_include: string[]
+			parent: Entity<"Plan">
+			event_time: Date
 		}
 	}
 }
