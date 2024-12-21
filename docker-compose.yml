@@ -1,0 +1,10 @@
+services:
+    pco-webhook:
+        container_name: pco-webhook
+        image: pco-webhook
+        build:
+            dockerfile: ./Dockerfile
+        restart: unless-stopped
+        env_file: ./.env
+        ports:
+            - ${PORT:-3000}:${PORT:-3000}

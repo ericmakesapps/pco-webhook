@@ -105,11 +105,11 @@ const sendNotification = debounce(
 	false
 )
 
-app.use(express.json())
-
 app.get("/", (_, res) => {
-	res.send("I’m alive!\n")
+	res.end("I’m alive!\n")
 })
+
+app.use(express.json())
 
 app.post(
 	"/",
@@ -194,6 +194,8 @@ app.post(
 	}
 )
 
-app.listen(7777, "127.0.0.1", () => {
-	console.log("Listening on port 7777")
+const port = parseInt(process.env.PORT || "", 10) || 3000
+
+app.listen(port, "0.0.0.0", () => {
+	console.log(`Listening on port ${port}`)
 })

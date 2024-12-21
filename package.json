@@ -1,6 +1,6 @@
 {
 	"name": "pco-webhook",
-	"version": "0.0.3",
+	"version": "0.0.4",
 	"description": "",
 	"main": "build/index.js",
 	"scripts": {
@@ -12,16 +12,22 @@
 	"author": "Eric Ferreira",
 	"license": "MIT",
 	"dependencies": {
-		"express": "^4.21.0",
-		"fast-ts-helpers": "^6.5.3"
+		"express": "^4.21.2",
+		"fast-ts-helpers": "^6.7.0"
 	},
 	"devDependencies": {
 		"@types/express": "^5.0.0",
-		"@types/node": "^22.7.4",
-		"node": "^22.9.0",
-		"nodemon": "^3.1.7",
+		"@types/node": "^22.10.2",
+		"node": "^23.5.0",
+		"nodemon": "^3.1.9",
 		"rimraf": "^6.0.1",
 		"ts-node": "^10.9.2",
-		"typescript": "^5.6.2"
+		"typescript": "^5.7.2"
+	},
+	"pnpm": {
+		"overrides": {
+			"braces@<3.0.3": ">=3.0.3",
+			"cross-spawn@>=7.0.0 <7.0.5": ">=7.0.5"
+		}
 	}
 }
